@@ -1,3 +1,4 @@
+%function [Clust,Coord,NMI,NMIv,ACCV,acc,adj_square,ObjV]=IsoFdp(netfile,dim1,dim2,metrics,NumCom1,NumCom2,trueLabel,objf,nmi,isfast)
 function [Clust,Coord,NMI,NMIv,ACCV,acc,adj_square,ObjV]=IsoFdp(netfile,dim1,dim2,metrics,NumCom1,NumCom2,trueLabel,objf,nmi)
 
 %本算法首先利用isomap对网络两两相似度进行降纬，再计算降纬后坐标的两两距离
@@ -262,6 +263,8 @@ else
 	Clust=vertclustMatrix{order1};
 	NMI=[];
 	NMIv=[];
+	ACCV=[];
+	acc=[];
 end
 toc;
 

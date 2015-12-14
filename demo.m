@@ -1,8 +1,8 @@
 % demonstration on how to use IsoFdp.
-% put all the file in the same directory
+% 
 % Note: we cannot be responsible for its use, misuse, 
 % or functionality. 
-%%
+%
 
 
 clear
