@@ -1,60 +1,43 @@
-%function [Clust,Coord,NMI,NMIv,ACCV,acc,adj_square,ObjV]=IsoFdp(netfile,dim1,dim2,metrics,NumCom1,NumCom2,trueLabel,objf,nmi,isfast)
-function [Clust,Coord,NMI,NMIv,ACCV,acc,adj_square,ObjV]=IsoFdp(netfile,dim1,dim2,metrics,NumCom1,NumCom2,trueLabel,objf,nmi)
+function [Clust,Coord,NMI,NMIv,ACCV,acc,adj_square,ObjV]=IsoFdp(netfile,dim1,dim2,metrics,NumCom1,NumCom2,trueLabel,nmi)
+%input:
+%    	netfile = the adjacency matrix with 2 columns: [nodeid1 nodeid2]
+%		dim1 and dim2 = the range of the dimension
+%		metrics = the method to calculate the similarity/distance:'structure' 'euclidean'... and so on
+%		NumCom1 and NumCom2 = the range of the number of communities
+%		trueLabel = the grandtruth community for LFR network
+%		nmi = 1: the NMI of the result ;2: the ACC of the result
+%output:
+%		Clust = the community label of each node
+%       Coord = the coordinates of the low dimension manifold for each node
+%		NMI = the NMI of the result
+%       NMIv = the NMI for each dimension
+%		ACCV = the acc for each dimension
+%		acc = the acc of the result
+%		adj_square = the square form of input adjacency matrix
+%		ObjV = the PD value for each dimension
 
-%本算法首先利用isomap对网络两两相似度进行降纬，再计算降纬后坐标的两两距离
-%在此距离基础上利用cluster_dp算法聚类  此本版集合了'strength'节点距离测度 2015-04-17
-%此版本集合了结构相似度'structure'来自<Novel heuristic density-based method for community
-%detection in networks>(2014) 并且 利用PD函数实现自动化聚类 2015-04-20
-%netfile='长方邻接矩阵'  NumCom表示类迭代次数(2:NumCom)仿造SBMF(2013) 边聚类暂时没有vc=0时取[]
-%type='Extend'or'Jaccard'分别表示两种边相似度测度 vc=1时取[]
-%dim表示在iso某纬度中提取坐标
-%vc=1节点聚类  vc=0边聚类
-%metrics='diffusionkernel' 'strength' 或者其他pdist自动测度 当vc=1时选择距离测度 vc=0取[]
-%此版本集合了PD和modularity两个目标函数实现自动化聚类 2014-04-21 
-%obj='PD' or 'anythingelse' PD 
-%'Extend'来自<Link Clustering with Extended Link Similarity and EQ Evaluation Division>(2013)提供的广义相似度公式
-%'Jaccard'来自<Link communities reveal multiscale complexity in networks>(2010)提供的Jaccard相似度公式
-%'strength'来自<VISUAL CLUSTERING OF COMPLEX NETWORK BASED ON NONLINEAR DIMENSION REDUCTION>(2006)引用的边强度倒数作为节点距离测度
-%此版本用于测试LFR非重叠数据集,2015-05-25,由于该算法是确定性算法且速度比较慢,所以建议只算1次NMI
-%示例：
-%>> [vertclust,Linkclust,NMI]=IsoCdp_NMI_LFR('network_06.dat',[],25,1,'structure',50,'community_06.dat','q');
-%为了在network_06数据集上取得好结果,此版本注释了352-356,屏蔽噪声
+%example : [~,~,resultnmi,~,~,~,~,~]=IsoFdp('LFR_data\\network_mix1.dat',10,30,'structure',15,50,'LFR_data\\community_mix1.dat',1);
 
-%此版本可以探测GN网络/LFR(非重叠)网络/以及真实网络(足球/海豚/jazz...) 2015-06-16
-%示例：人工网络需要NMI则输入参数nmi=1 
-%2015-08-06: 输出降维后的坐标矩阵 以供DBSCAN kmeans聚类
-%>> [vertclust,Coord,NMI04375]=IsoFdp_Com('network_0.4375.dat',[],4,1,'structure',50,'community_0.4375.dat','PD',1);
-%示例：真实网络不需要NMI则输入参数nmi=0
-%>> [vertclustjaz,Coord,nmi,objjaz]=IsoFdp_Com('jazzed.txt',[],6,1,'structure',50,[],'PD',0);
-%此版本用以测试dim敏感性/同时添加原始PD/真实网络绘图 2015-10-19
-%添加参数dim1,dim2用以控制维度范围
-%NumCom1,NumCom2控制类簇个数从哪到哪
-%集合维度在内一起找最大PD得到最终聚类结果
-% [Clust,Coord,NMI,adj_square,ObjV]=IsoFdp_Com('network_1_zout7.dat',[],2,25,1,'structure',2,6,'community_1_zout7.dat','PD2',1);
+
 tic;			 
 x=load(netfile);
 largex=x;       
-nv=size(x,1);     %得到2列格式邻接矩阵的行数(网络边数的2倍)
-ND=nv/2;	         %网络边数
-n=max(x(:,2));	 %节点数
-x(x(:,1)>x(:,2),:)=[];	%无重复长方邻接阵
+nv=size(x,1);    
+ND=nv/2;	       
+n=max(x(:,2));	 
+x(x(:,1)>x(:,2),:)=[];	
 
 
-%   net=load(netfile);      %%针对无权无向网络，且每个节点至少有一条边(不适用于有隔离节点的矩阵)
-%   nv=size(net,1);         %%得到2/3列格式邻接矩阵行数(网络边数2倍)
-%   ND=length(unique(net(:,1)));  %%得到网络总节点数
-%   adj_square=zeros(ND);         %%得到ND*ND的0方阵
-adj_square=zeros(n);          %%得到n*n的0方阵
-%%如果邻接阵只有2列，则为无权网络
-%%返回二值邻接方阵(无权网络)
+adj_square=zeros(n);         
+
 if size(x,2)<3          
 	for i=1:ND
 		ii=x(i,1);             
 		jj=x(i,2);        
-		adj_square(ii,jj)=1;     %得到邻接方阵
+		adj_square(ii,jj)=1;     
 		adj_square(jj,ii)=1;
 	end
-%%返回double邻接方阵(有权网络)
+
 
 elseif size(net,2)==3   
 	for i=1:ND                  
@@ -65,144 +48,18 @@ elseif size(net,2)==3
 	end
 end
 
-%%如果没有指定特定距离则默认使用欧式距离
-%%得到一个ND*(ND-1)/2的行向量,把邻接方阵当作n纬空间n个点的坐标矩阵求得此两两距离  
-%%如果指定了测度但不是'diffusionkernel'那么将该指定测度传递给pdist     
-if  all([(~strcmp(metrics,'diffusionkernel')),(~strcmp(metrics,'strength')),(~strcmp(metrics,'structure'))])  
+% 10 other mesures tested in the paper:'euclidean','cosine','jaccard'... and so on
+if  ~strcmp(metrics,'structure')
 	dist1=pdist(adj_square,metrics); 
 	Diso=squareform(dist1);
 end
 
-%%如果输入的第二参数指定为'diffusionkernel'则单独计算距离矩阵
-%%计算时要求输入beta值
-%%得到的初始距离阵S为方阵，
-if  (strcmp(metrics,'diffusionkernel'))
-	disp('need the beta for diffusionkernel') 
-	beta=input('value of beta for diffusionkernel \n');
-	z=adj_square;
-
-	for i = 1:n
-		z(i,i)=-sum(adj_square(i,:),2);
-	end
-
-	temp0 = beta*z;
-	K = expm(temp0);
-	D = diag(K);
-	S = K./sqrt((repmat(D,1,n).*repmat(D',n,1))); 
-%%将距离方阵S转换为n*(n-1)/2距离行向量dist1
-	k=0;
-	for i=1:n-1
-		for j=i+1:n
-	   		k=k+1;
-	   		dist1(k)=S(i,j); 
-		end  
-	end
-	Diso=squareform(dist1);
-end
-
-if  (strcmp(metrics,'strength'))
-%		x=load(netfile);
-%		largex=x;       
-%		nv=size(x,1);          %得到2列格式邻接矩阵的行数(网络边数的2倍)
-%		ND=nv/2;			   %网络边数
-%		n=max(x(:,2));			   %节点数
-%		adj_square=zeros(n);   %初始化邻接方阵
-%		for i=1:nv			   %长方邻接阵转换为邻接方阵
-%			ii=x(i,1);         %有重复边2列长方邻接阵 也适用于无重复边2列长方阵      
-%			jj=x(i,2);       
-%			adj_square(ii,jj)=1;   %邻接方阵为以后取子图方便  
-%			adj_square(jj,ii)=1;
-%		end
-%		x(x(:,1)>x(:,2),:)=[];
-
-	%neighbour=cell(n,1);	%初始化n个节点领域数组
-	%for i = 1:n
-	%	neighbour{i}=[i;largex(largex(:,1)==i,2)];  %得到所有点领域数组
-	%end 
-
-
-	%本算法每条边对应点的领域是相对变化的 当然特定两点公共领域点不会变
-	%边相似度算法中点领域是固定的
-	%因此需要根据每条边分别计算左右两点的排他领域和公共领域
-	Affinity.left=cell(ND,1);	%初始化每条边左边点的排他领域
-	Affinity.right=cell(ND,1);	%初始化每条边右边点的排他领域
-	Affinity.common=cell(ND,1);	%初始化每条边两点的公共领域
-
-	exneighbour=cell(n,1);  %初始化n个节点领域数组
-	for i = 1:n
-	  	exneighbour{i}=largex(largex(:,1)==i,2);  %得到所有点领域数组(没有自己)
-	end 
-
-	%intercatrix=cell(n,n); 	%初始化节点两两交集元胞(不包含自己的公共领域点)
-	%for i = 1:n-1
-	%	for j =i+1:n
-	%		intercatrix{i,j}=intersect(exneighbour(i),exneighbour(j));
-	%	end
-	%end
-
-	for i = 1:ND
-	%	leftwhole=largex(largex(:,1)==x(i,1)),2);   %第i条边左边点全部领域点(没有自己)
-	%	rightwhole=largex(largex(:,1)==x(i,2)),2);	%第i条边右边点全部领域点(没有自己)
-	%	common=intersect(exneighbour{x(i,1)},exneighbour{x(i,2)}); %第i条边两点公共领域点(没有自己)
-	%	left=setdiff(exneighbour{x(i,1)},[exneighbour{x(i,2)},x(i,2)]);  %左边点排他领域(没有自己)
-	%	right=setdiff(exneighbour{x(i,2)},[exneighbour{x(i,1)},x(i,1)]); %右边点排他领域(没有自己)
-	%	Affinity.left{i}=left;
-		Affinity.left{i}=(setdiff(exneighbour{x(i,1)},[exneighbour{x(i,2)};x(i,2)]))';
-	%	Affinity.right{i}=right;
-		Affinity.right{i}=(setdiff(exneighbour{x(i,2)},[exneighbour{x(i,1)};x(i,1)]))';
-	%	Affinity.common{i}=common;
-		Affinity.common{i}=(intersect(exneighbour{x(i,1)},exneighbour{x(i,2)}))';
-	end
-
-	strength=zeros(1,ND);	%初始化边强度向量
-
-	for i = 1:ND  	%求得每条边左右两点排他子图  公共领域子图
-	%	subleft=adj_square(Affinity.left{i},Affinity.left{i});    %左边点排他子图
-	%	subright=adj_square(Affinity.right{i},Affinity.right{i}); %右边点排他子图
-		subcommon=adj_square(Affinity.common{i},Affinity.common{i}); %公共领域子图
-		LinkCC=sum(sum(subcommon)); 	%公共领域子图内部连边数2倍
-		linkLR=sum(sum(adj_square(Affinity.left{i},Affinity.right{i})))/2;  %两个节点排他子图之间连边数
-		LinkLC=sum(sum(adj_square(Affinity.left{i},Affinity.common{i})))/2; %左边排他子图和公共子图之间连边数
-		LinkRC=sum(sum(adj_square(Affinity.right{i},Affinity.common{i})))/2;%右边排他子图和公共子图之间连边数
-		SLR=linkLR/(length(Affinity.left{i})*length(Affinity.left{i}));     %左右两个排他领域强度
-		if isnan(SLR)
-		   SLR=0;	
-		end
-		SLC=LinkLC/(length(Affinity.left{i})*length(Affinity.common{i}));	
-		if isnan(SLC)
-		   SLC=0;	
-		end
-		SRC=LinkRC/(length(Affinity.right{i})*length(Affinity.common{i})); 
-		if isnan(SRC)
-		   SRC=0;	
-		end 
-		SCC=LinkCC/(length(Affinity.common{i})*(length(Affinity.common{i})-1)); %公共领域子图内部强度
-		if isnan(SCC)
-		   SCC=0;
-		end  
-		pro3len=length(Affinity.common{i})/(length(Affinity.left{i})+length(Affinity.right{i})+length(Affinity.common{i}));
-		if isnan(pro3len)
-		   pro3len=0;
-		end  
-		strength(i)=SLR+SLC+SRC+SCC+pro3len;  	%最终连边强度
-	end
-
-	Diso11=1./zeros(n);	   %初始化距离矩方阵 默认为Inf
-	for i=1:ND			   %利用无重复邻接长阵x
-		ii=x(i,1);              
-		jj=x(i,2);       
-		Diso11(ii,jj)=1/strength(i);   %两点距离等于其连边强度倒数 
-		Diso11(jj,ii)=1/strength(i);
-	end
-	Diso11(logical(eye(size(Diso11,1))))=0;	%主对角线节点自己距离为0
-	Diso=Diso11;
-end	
-
+% structure similarity 
 if  (strcmp(metrics,'structure'))
-	neighbour=cell(n,1);  %初始化n个节点领域数组
-	VsimiMatrix=zeros(n); %初始化节点结构相似度矩阵
+	neighbour=cell(n,1);  
+	VsimiMatrix=zeros(n); 
 	for i = 1:n
-	  	neighbour{i}=[i;largex(largex(:,1)==i,2)];  %得到所有点领域数组(包括自己)
+	  	neighbour{i}=[i;largex(largex(:,1)==i,2)];  
 	end 
 	for i = 1:n-1
 		for j =i+1:n
@@ -214,17 +71,15 @@ if  (strcmp(metrics,'structure'))
 	Diso(logical(eye(size(Diso,1))))=0;
 end
 
-
-if nmi == 1
+% get the nmi value or acc value for the community result
+if nmi == 1  
    trueL=load(trueLabel);
    trueL=trueL(:,2);
-
-   %for i = 1:10
    dimpool=dim1:dim2;
    NMIv(length(dimpool))=0;
    vertclustMatrix=zeros(length(dimpool),size(trueL,1));
    for i = 1:length(dimpool)
-	   [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dimpool(i),NumCom1,NumCom2,objf);
+	   [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dimpool(i),NumCom1,NumCom2,'PD2');
 	   NMIv(i)=NormalizedMI(trueL,vertclust');
 	   ObjV(i)=objv;
 	   vertclustMatrix(i,:)=vertclust;
@@ -241,7 +96,7 @@ elseif nmi==2
    	ACCV(length(dimpool))=0;
    	vertclustMatrix=zeros(length(dimpool),size(trueL,1));
    	for i = 1:length(dimpool)
-	   [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dimpool(i),NumCom1,NumCom2,objf);
+	   [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dimpool(i),NumCom1,NumCom2,'PD2');
 	   ACCV(i)=calculateAccuracy(trueL',vertclust);
 	   ObjV(i)=objv;
 	   vertclustMatrix(i,:)=vertclust;
@@ -255,7 +110,7 @@ else
 	dimpool=dim1:dim2;
 	vertclustMatrix=cell(length(dimpool),1);
     for i = 1:length(dimpool)
-		[vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dimpool(i),NumCom1,NumCom2,objf);
+		[vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dimpool(i),NumCom1,NumCom2,'PD2');
 		vertclustMatrix{i}=vertclust;
 		ObjV(i)=objv;
 	end
@@ -268,36 +123,21 @@ else
 end
 toc;
 
-%function [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dim,NumCom1,NumCom2,objf,isfast)
+
 function [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dim,NumCom1,NumCom2,objf)
 
-
-	 options.dims = 2:35;	 %降纬的目标空间
-	
-	% if isfast==1
-		%options.landmarks = 1:(0.5*n);	 %landmark iso选中的mark点数   0.963612304522893  0.9659  0.9610
-		% if n>500
-		% 	options.landmarks = 1:(0.25*n);
-		% end	
-		options.dijkstra=1;
-		[Y]=IsomapII(Diso,'k', 100, options);
-	% else
-	% 	[Y,~,~]=Isomap(Diso,'k', 100, options);
-	% end
-		%options.verbose=0;      %不输出中间过程
-		%options.display=0;		 %不出2纬映射图
-		%options.overlay=0;		 %不出残差方差图
-	
-
-	Coordiso=Y.coords{dim};  %选择iso生成的dim纬度坐标 计算下一步距离矩阵
+	%================================IsomapII============================
+	%calculate the low dimension coordinates for each node
+	options.dims = 2:35;	 
+	options.dijkstra=1;
+	[Y]=IsomapII(Diso,'k', 100, options);
+	Coordiso=Y.coords{dim};  
 	Coord=Coordiso';
-	xx=pdist(Coordiso','cosine');	 %得到iso生成坐标的两两距离向量
-%	xx=pdist(Coordiso','cityblock');	 %得到iso生成坐标的两两距离向量
-%	xx=pdist(Coordiso','hamming');
-	xx=[combnk(1:n,2),xx'];  %生成clust_dp需要的三列格式距离矩阵
 
-	%============================================================
-	%iso低纬坐标的三列格式距离矩阵,利用cluster_dp对其聚类
+	%================================FdpI===============================
+	% FdpI to calculate threes measures for each node
+	xx=pdist(Coordiso','cosine');	 
+	xx=[combnk(1:n,2),xx'];  
 	ND=max(xx(:,2));
 	NL=max(xx(:,1));
 	if (NL>ND)
@@ -315,37 +155,18 @@ function [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dim,NumCom1,NumCom2
 	  	dist(ii,jj)=xx(i,3);
 	  	dist(jj,ii)=xx(i,3);
 	end
-	percent=2.0;
-%	percent=2.5;
-%	percent=3.0;
-%	percent=3.5;
-%	percent=4.0;
-%	percent=4.5;
-%	percent=5.0;
-	fprintf('average percentage of neighbours (hard coded): %5.6f\n', percent);
 
+	% calculate the local density for each node
+	percent=2.0;
+	fprintf('average percentage of neighbours (hard coded): %5.6f\n', percent);
 	position=round(N*percent/100);
 	sda=sort(xx(:,3));
 	dc=sda(position);
-
 	fprintf('Computing Rho with gaussian kernel of radius: %12.6f\n', dc);
-
 
 	for i=1:ND
 	  	rho(i)=0.;
 	end
-	%
-	% Gaussian kernel
-	%
-	%for i=1:ND-1
-	%  for j=i+1:ND
-	%     rho(i)=rho(i)+exp(-(dist(i,j)/dc)*(dist(i,j)/dc));
-	%     rho(j)=rho(j)+exp(-(dist(i,j)/dc)*(dist(i,j)/dc));
-	%  end
-	%end
-	%
-	% "Cut off" kernel
-	%
 	for i=1:ND-1
 	  	for j=i+1:ND
 	    	if (dist(i,j)<dc)
@@ -355,8 +176,8 @@ function [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dim,NumCom1,NumCom2
 	  	end
 	end
 
+	% calculate the relative distance for each node
 	maxd=max(max(dist));
-
 	[rho_sorted,ordrho]=sort(rho,'descend');
 	delta(ordrho(1))=-1.;
 	nneigh(ordrho(1))=0;
@@ -371,66 +192,36 @@ function [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dim,NumCom1,NumCom2
 	    end
 	end
 	delta(ordrho(1))=max(delta(:));
-%	disp('Generated file:DECISION GRAPH')
-%	disp('column 1:Density')
-%	disp('column 2:Delta')
 
-%	fid = fopen('DECISION_GRAPH', 'w');
-%	for i=1:ND
-%	   	fprintf(fid, '%6.2f %6.2f\n', rho(i),delta(i));
-%	end
-
-%	disp('Select a rectangle enclosing cluster centers')
-%	scrsz = get(0,'ScreenSize');
-%	figure('Position',[6 72 scrsz(3)/4. scrsz(4)/1.3]);
+	% calculate the third meauser for each node
 	for i=1:ND
 	  	ind(i)=i;
 	  	gamma(i)=rho(i)*delta(i);
 	end
-
 	[gam_sorted,ordgam]=sort(gamma,'descend');
     
 	
-	p(NumCom2-NumCom1+1)=0;		%初始化p值向量
-    
-	clustMatrix=zeros(NumCom2-NumCom1+1,ND);	%初始化每个类数下的聚类结果储存矩阵	
+	%================================FdpII===============================
+	% choose the number of communities and finish the assignment
+	p(NumCom2-NumCom1+1)=0;		
+	clustMatrix=zeros(NumCom2-NumCom1+1,ND);	
 	for i = NumCom1:NumCom2    
-		vertclust(1:ND)=-1; 	%初始化节点类标签向量
+		vertclust(1:ND)=-1; 	
 		NCLUST=i;
+		%choose the community center nodes
 		temcenter=ordgam(1:i);
 		for j = 1:i
 			vertclust(temcenter(j))=j;
-		end			
-		%assignation
+		end		
+
+		%assigne the member nodes
 		for im = 1:ND
 	    	if (vertclust(ordrho(im))==-1)
 	       	   vertclust(ordrho(im))=vertclust(nneigh(ordrho(im)));
 	    	end
 		end
-		%halo
+	
 		halo=vertclust;
-		% for imm=1:i
-	 %       	bord_rho(i)=0.;
-	 %    end
-	 %   	for itt = 1:ND-1
-	 %    	for jtt = itt+1:ND
-	 %      		if ((vertclust(itt)~=vertclust(jtt))&&(dist(itt,jtt)<=dc))
-	 %        		rho_aver=(rho(itt)+rho(jtt))/2.;
-	 %        		if (rho_aver>bord_rho(vertclust(itt)))
-	 %          			bord_rho(vertclust(itt))=rho_aver;
-	 %        		end
-	 %        		if (rho_aver>bord_rho(vertclust(jtt)))
-	 %          			bord_rho(vertclust(jtt))=rho_aver;
-	 %        		end
-	 %      		end
-	 %    	end
-	 %   	end
-%	   	for inn = 1:ND
-%	    	if (rho(inn)<bord_rho(vertclust(inn)))
-%	      		halo(inn)=0;
-%	    	end
-%	   	end
-
 	   	Modules=cell(1,length(unique(halo)));
 	   	for iz = 1:length(unique(halo))
 	   		Modules{iz}=find(halo==iz);
@@ -441,9 +232,10 @@ function [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dim,NumCom1,NumCom2
 			vertclustcell{ik}=halo(ik);
 		end
 		clustMatrix(i,:)=halo;
-		if strcmp(objf,'PD1')    %原始PD
+		%calculate the partition density 
+		if strcmp(objf,'PD1')    
 		   p(i)=PD1(adj_square,vertclustcell,i);
-		elseif strcmp(objf,'PD2')  %张老师PD
+		elseif strcmp(objf,'PD2')  
 		   p(i)=PD2(adj_square,vertclustcell,i);
 		else
 		   p(i)=modularity_metric(Modules,adj_square);	
@@ -454,61 +246,9 @@ function [vertclust,Coord,objv]=IsoCDP_Obj(adj_square,n,Diso,dim,NumCom1,NumCom2
 
 
 
+%the original version of Isomap which is slow
 function [Y, R, E] = Isomap(D, n_fcn, n_size, options);
 
-% ISOMAP   Computes Isomap embedding using the algorithm of 
-%             Tenenbaum, de Silva, and Langford (2000). 
-%
-% [Y, R, E] = isomap(D, n_fcn, n_size, options); 
-%
-% Input:
-%    D = N x N matrix of distances (where N is the number of data points)
-%    n_fcn = neighborhood function ('epsilon' or 'k') 
-%    n_size = neighborhood size (value for epsilon or k) 
-%
-%    options.dims = (row) vector of embedding dimensionalities to use
-%                        (1:10 = default)
-%    options.comp = which connected component to embed, if more than one. 
-%                        (1 = largest (default), 2 = second largest, ...)
-%    options.display = plot residual variance and 2-D embedding?
-%                        (1 = yes (default), 0 = no)
-%    options.overlay = overlay graph on 2-D embedding?  
-%                        (1 = yes (default), 0 = no)
-%    options.verbose = display progress reports? 
-%                        (1 = yes (default), 0 = no)
-%
-% Output: 
-%    Y = Y.coords is a cell array, with coordinates for d-dimensional embeddings
-%         in Y.coords{d}.  Y.index contains the indices of the points embedded.
-%    R = residual variances for embeddings in Y
-%    E = edge matrix for neighborhood graph
-%
-
-%    BEGIN COPYRIGHT NOTICE
-%
-%    Isomap code -- (c) 1998-2000 Josh Tenenbaum
-%
-%    This code is provided as is, with no guarantees except that 
-%    bugs are almost surely present.  Published reports of research 
-%    using this code (or a modified version) should cite the 
-%    article that describes the algorithm: 
-%
-%      J. B. Tenenbaum, V. de Silva, J. C. Langford (2000).  A global
-%      geometric framework for nonlinear dimensionality reduction.  
-%      Science 290 (5500): 2319-2323, 22 December 2000.  
-%
-%    Comments and bug reports are welcome.  Email to jbt@psych.stanford.edu. 
-%    I would also appreciate hearing about how you used this code, 
-%    improvements that you have made to it, or translations into other
-%    languages.    
-%
-%    You are free to modify, extend or distribute this code, as long 
-%    as this copyright notice is included whole and unchanged.  
-%
-%    END COPYRIGHT NOTICE
-
-
-%%%%% Step 0: Initialization and Parameters %%%%%
 
 N = size(D,1); 
 if ~(N==size(D,2))
@@ -578,19 +318,12 @@ if (overlay == 1)
      E = int8(1-(D==INF));  %%  Edge information for subsequent graph overlay
 end
 
-% Finite entries in D now correspond to distances between neighboring points. 
-% Infinite entries (really, equal to INF) in D now correspond to 
-%   non-neighoring points. 
+
 
 %%%%% Step 2: Compute shortest paths %%%%%
 disp('Computing shortest paths...'); 
 
-% We use Floyd's algorithm, which produces the best performance in Matlab. 
-% Dijkstra's algorithm is significantly more efficient for sparse graphs, 
-% but requires for-loops that are very slow to run in Matlab.  A significantly 
-% faster implementation of Isomap that calls a MEX file for Dijkstra's 
-% algorithm can be found in isomap2.m (and the accompanying files
-% dijkstra.c and dijkstra.dll). 
+
 
 tic; 
 for k=1:N
@@ -774,15 +507,7 @@ P = sum(d)/(N*(k^0.5));
 
 
 
-% Computing the modularity for a given module/commnunity break-down
-% Defined as: Q=sum_over_modules_i (eii-ai^2) (eq 5) in Newman and Girvan.
-% eij = fraction of edges that connect community i to community j, ai=sum_j (eij)
-% Source: Newman, M.E.J., Girvan, M., "Finding and evaluating community structure in networks"
-% Also: "Fast algorithm for detecting community structure in networks", Mark Newman
-% Inputs: adjacency matrix and set modules as cell array of vectors, ex: {[1,2,3],[4,5,6]}
-% Outputs: modularity metric, in [-1,1]
-% Other functions used: numedges.m
-% Last updated: June 13, 2011
+
 
 function Q=modularity_metric(modules,adj)
 
@@ -799,12 +524,6 @@ end
 
 
 
-% Returns the total number of edges given the adjacency matrix
-% Valid for both directed and undirected, simple or general graph
-% INPUTs: adjacency matrix
-% OUTPUTs: m - total number of edges/links
-% Other routines used: selfloops.m, issymmetric.m
-% GB, Last Updated: October 1, 2009
 
 function m = numedges(adj)
 
@@ -845,80 +564,9 @@ function sl=selfloops(adj)
 sl=sum(diag(adj));
 
 
-% function d = L2_distance(a,b,df)
-% % L2_DISTANCE - computes Euclidean distance matrix
-% %
-% % E = L2_distance(A,B)
-% %
-% %    A - (DxM) matrix 
-% %    B - (DxN) matrix
-% %    df = 1, force diagonals to be zero; 0 (default), do not force
-% % 
-% % Returns:
-% %    E - (MxN) Euclidean distances between vectors in A and B
-% %
-% %
-% % Description : 
-% %    This fully vectorized (VERY FAST!) m-file computes the 
-% %    Euclidean distance between two vectors by:
-% %
-% %                 ||A-B|| = sqrt ( ||A||^2 + ||B||^2 - 2*A.B )
-% %
-% % Example : 
-% %    A = rand(400,100); B = rand(400,200);
-% %    d = L2_distance(A,B);
-
-% % Author   : Roland Bunschoten
-% %            University of Amsterdam
-% %            Intelligent Autonomous Systems (IAS) group
-% %            Kruislaan 403  1098 SJ Amsterdam
-% %            tel.(+31)20-5257524
-% %            bunschot@wins.uva.nl
-% % Last Rev : Wed Oct 20 08:58:08 MET DST 1999
-% % Tested   : PC Matlab v5.2 and Solaris Matlab v5.3
-
-% % Copyright notice: You are free to modify, extend and distribute 
-% %    this code granted that the author of the original code is 
-% %    mentioned as the original author of the code.
-
-% % Fixed by JBT (3/18/00) to work for 1-dimensional vectors
-% % and to warn for imaginary numbers.  Also ensures that 
-% % output is all real, and allows the option of forcing diagonals to
-% % be zero.  
-
-% if (nargin < 2)
-%    error('Not enough input arguments');
-% end
-
-% if (nargin < 3)
-%    df = 0;    % by default, do not force 0 on the diagonal
-% end
-
-% if (size(a,1) ~= size(b,1))
-%    error('A and B should be of same dimensionality');
-% end
-
-% if ~(isreal(a)*isreal(b))
-%    disp('Warning: running distance.m with imaginary numbers.  Results may be off.'); 
-% end
-
-% if (size(a,1) == 1)
-%   a = [a; zeros(1,size(a,2))]; 
-%   b = [b; zeros(1,size(b,2))]; 
-% end
-
-% aa=sum(a.*a); bb=sum(b.*b); ab=a'*b;   %求得两两列向量内积，每个列向量模平方
-% d = sqrt(repmat(aa',[1 size(bb,2)]) + repmat(bb,[size(aa,2) 1]) - 2*ab);
-
-% % make sure result is all real
-% d = real(d); 
-
-% % force 0 on the diagonal? 
-% if (df==1)
-%   d = d.*(1-eye(size(d)));    %强制所有对角元素为0,为什么要强制？不存在自己和自己的距离 向量来自不同矩阵
-% end
 
 
+%calculate NMI value
 function [NMI] = NormalizedMI(trueLabel, partitionMatrix)
 % normalized mutual information
 % Author: Weike Pan, weikep@cse.ust.hk
@@ -992,7 +640,7 @@ Hvarsigma = - sum( (sum(truey)/m) .* log( sum(truey)/m + eps ) );
 % JMLR03, A. Strehl and J. Ghosh. Cluster ensembles -- a knowledge reuse framework for combining multiple partitions.
 NMI = NMI/sqrt(Hpi*Hvarsigma);
 
-
+%Calulate acc value this version use perms and cannot handle big networks
 function [Acc,rand_index,match]=AccMeasure(T,idx)
 %Measure percentage of Accuracy and the Rand index of clustering results
 % The number of class must equal to the number cluster 
@@ -1053,7 +701,7 @@ rand_index=200*(rand_ss1+rand_dd1)/(n*(n-1));
 Acc=Acc1/n*100; 
 match=[1:k;match];
 
-
+%Calulate acc value this version  can handle big networks
 function [micro_precision]=calculateAccuracy(true_labels,Ensemble_labels)
 %
 % Calculate  micro-precision given clustering results and true labels.
