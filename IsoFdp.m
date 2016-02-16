@@ -28,25 +28,13 @@ n=max(x(:,2));
 x(x(:,1)>x(:,2),:)=[];	
 
 
-adj_square=zeros(n);         
-
-if size(x,2)<3          
-	for i=1:ND
-		ii=x(i,1);             
-		jj=x(i,2);        
-		adj_square(ii,jj)=1;     
-		adj_square(jj,ii)=1;
-	end
-
-
-elseif size(net,2)==3   
-	for i=1:ND                  
-		ii=x(i,1);             
-		jj=x(i,2);        
-		adj_square(ii,jj)=x(i,3);       
-		adj_square(jj,ii)=x(i,3);
-	end
+adj_square=sparse(n,n);
+for i=1:size(x,1)
+	mi=x(i,1);
+	ni=x(i,2);
+	adj_square(mi,ni)=1;
 end
+adj_square=adj_square+adj_square'+speye(n);
 
 % 10 other mesures tested in the paper:'euclidean','cosine','jaccard'... and so on
 if  ~strcmp(metrics,'structure')
@@ -55,20 +43,18 @@ if  ~strcmp(metrics,'structure')
 end
 
 % structure similarity 
+t1=clock;		 
 if  (strcmp(metrics,'structure'))
-	neighbour=cell(n,1);  
-	VsimiMatrix=zeros(n); 
-	for i = 1:n
-	  	neighbour{i}=[i;largex(largex(:,1)==i,2)];  
-	end 
-	for i = 1:n-1
-		for j =i+1:n
-			VsimiMatrix(i,j)=length(intersect(neighbour{i},neighbour{j}))/sqrt(length(neighbour{i})*length(neighbour{j}));
-		end
-	end
-	VsimiMatrix=VsimiMatrix+VsimiMatrix'+eye(n);
+	SSfunc1=@(XI,XJ)(XI*XJ');     
+	SSfunc2=@(XI,XJ)(sqrt(XI*XJ)); 
+	intersectvector=sparse(pdist(adj_square,SSfunc1));
+	MA=sum(adj_square,2);
+	unionvector=sparse(pdist(MA,SSfunc2));
+	SS=sparse(intersectvector./unionvector);
+	VsimiMatrix=sparse(squareform(SS));
+	%Diso=sparse(1)./VsimiMatrix;
 	Diso=1./VsimiMatrix;
-	Diso(logical(eye(size(Diso,1))))=0;
+	Diso(logical(eye(n)))=0;
 end
 
 % get the nmi value or acc value for the community result

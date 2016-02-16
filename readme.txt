@@ -19,12 +19,14 @@ This document contains following files:
 
 7.readme
 
+Note: The codes from line 31 to line 72 in IsoFdp.m is changed. By utilizing sparse matrix and custom function in pdist, this version of 'structure similarity' is about 100x faster than the original one which is coded by double for-loop.  
+
 Feedback is very welcome. If you have found a bug, or have any problems or commnets, please write to: 
 isaacyou@email.cufe.edu.cn;
 isaactyou@gmail.com;
 zhyuanzh@gmail.com
 
-12/11/2015
+02/13/2016
 
 Have fun!
 
